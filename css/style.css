@@ -216,16 +216,6 @@ h1 { font-size: 1.1rem; margin: 0; text-align: left; }
     color: var(--primary);
     letter-spacing: 0.1rem;
 }
-.tinyping-hint-placeholder {
-    font-size: 0.85rem;
-    color: #b48ba0;
-    font-weight: 600;
-    min-height: 3.2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 0.6rem;
-}
 .tinyping-voice-status {
     font-size: 0.85rem;
     color: #8a7480;

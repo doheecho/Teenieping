@@ -164,7 +164,6 @@ var TINYPING_GEN_LABEL = {
 };
 var TINYPING_TYPE_ORDER = ['로열 티니핑', '일반 티니핑', '레전드 티니핑'];
 var TINYPING_TIME_OPTIONS = [{ v: 10, l: '10초' }, { v: 15, l: '15초' }, { v: 20, l: '20초' }, { v: 0, l: '무제한' }];
-var TINYPING_HINT_DELAY_MS = 3000;
 var TINYPING_TITLE = '🎀 티니핑 맞히기!';
 
 // 한글 초성 분해 (공백은 그대로 유지)
@@ -279,7 +278,6 @@ function nextTinypingQuestion() {
     resetTinypingRoundState();
     renderTinyping();
     startTinypingTimer();
-    scheduleTinypingHint();
     if (TP_SPEECH_SUPPORTED) { startVoiceAnswer(); }
 }
 
@@ -289,20 +287,17 @@ function retryTinypingQuestion() {
     resetTinypingRoundState();
     renderTinyping();
     startTinypingTimer();
-    scheduleTinypingHint();
     if (TP_SPEECH_SUPPORTED) { startVoiceAnswer(); }
 }
 
 function resetTinypingRoundState() {
     tinypingState.revealed = false;
-    tinypingState.hintShown = false;
     tinypingState.voiceSaid = undefined;
     tinypingState.voiceMatched = undefined;
     tinypingState.timedOut = false;
     tinypingState.showSuccess = false;
     tinypingState.timeLeft = tinypingSettings.timeLimit;
     tinypingState.timerId = null;
-    tinypingState.hintTimerId = null;
 }
 
 function startTinypingTimer() {
@@ -324,28 +319,12 @@ function startTinypingTimer() {
     activeTimers.push(tinypingState.timerId);
 }
 
-// 초성 힌트는 타이머 바와 무관하게 독립적으로 표시된다.
-// 화면 전체를 다시 그리면 타이머 바 엘리먼트가 새로 만들어져 순간적으로 100%로 튀어 보이므로,
-// 힌트 영역만 부분적으로 갱신해 타이머 바가 끊기지 않게 한다.
-function scheduleTinypingHint() {
-    tinypingState.hintTimerId = setTimeout(function () {
-        if (!tinypingState.revealed) {
-            tinypingState.hintShown = true;
-            var hintArea = document.getElementById('tinypingHintArea');
-            if (hintArea) hintArea.innerHTML = buildTinypingHintHtml();
-        }
-    }, TINYPING_HINT_DELAY_MS);
-    activeTimers.push(tinypingState.hintTimerId);
-}
-
+// 초성 힌트는 문제가 나오자마자 바로 보여준다.
 function buildTinypingHintHtml() {
     if (tinypingState.revealed) {
         return '<div class="tinyping-hint-box tinyping-hint-answer">' + tinypingState.current.name + '</div>';
     }
-    if (tinypingState.hintShown) {
-        return '<div class="tinyping-hint-box">' + tpGetWordChosung(tinypingState.current.name) + '</div>';
-    }
-    return '<div class="tinyping-hint-placeholder">🤫 3초 후 초성 힌트가 나와요</div>';
+    return '<div class="tinyping-hint-box">' + tpGetWordChosung(tinypingState.current.name) + '</div>';
 }
 
 function renderTinyping() {
@@ -415,11 +394,12 @@ function renderTinyping() {
 function revealTinyping(manual) {
     stopVoiceRecognition();
     if (tinypingState.timerId) { clearInterval(tinypingState.timerId); tinypingState.timerId = null; }
-    if (tinypingState.hintTimerId) { clearTimeout(tinypingState.hintTimerId); tinypingState.hintTimerId = null; }
     tinypingState.revealed = true;
-    tinypingState.hintShown = true;
     if (manual === false) {
         tinypingState.timedOut = true;
+        tinypingState.totalCount++;
+    } else if (tinypingState.voiceSaid !== undefined) {
+        // 음성으로 몇 번 시도했지만 못 맞히고 "그냥 정답 보기"를 누른 경우도 한 번의 시도로 집계한다.
         tinypingState.totalCount++;
     }
     renderTinyping();
@@ -447,6 +427,8 @@ function stopVoiceRecognition() {
         tpVoiceRecognition = null;
     }
 }
+// 음성 인식은 한 번 말하면 끝나버리는 단발성이라, 정답을 못 맞히면 onend에서
+// (이 문제가 아직 진행 중일 때만) 스스로 다시 시작해서 타이머가 끝날 때까지 마이크가 계속 켜져있게 한다.
 function startVoiceAnswer() {
     var SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) return;
@@ -454,25 +436,37 @@ function startVoiceAnswer() {
     var statusEl = document.getElementById('tpVoiceStatus');
     if (statusEl) statusEl.innerText = '🎙️ 듣고 있어요... 캐릭터 이름을 말해보세요!';
 
-    tpVoiceRecognition = new SpeechRecognitionAPI();
-    tpVoiceRecognition.lang = 'ko-KR';
-    tpVoiceRecognition.interimResults = false;
-    tpVoiceRecognition.maxAlternatives = 3;
+    var recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'ko-KR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 3;
 
-    tpVoiceRecognition.onresult = function (event) {
+    recognition.onresult = function (event) {
         var transcripts = [];
         for (var i = 0; i < event.results[0].length; i++) {
             transcripts.push(event.results[0][i].transcript);
         }
         handleTinypingVoiceResult(transcripts);
     };
-    tpVoiceRecognition.onerror = function () {
+    recognition.onerror = function () {
         var st = document.getElementById('tpVoiceStatus');
-        if (st) st.innerText = '⚠️ 잘 못 들었어요. 마이크 버튼을 다시 눌러보세요.';
+        if (st && tpVoiceRecognition === recognition) st.innerText = '🎙️ 아직 듣고 있어요... 다시 한 번 말해볼까요?';
     };
-    tpVoiceRecognition.onend = function () { };
+    recognition.onend = function () {
+        // 인식이 끝나자마자 바로 start()를 다시 부르면 브라우저가 무시하거나 조용히 실패해서
+        // (특히 무음이 몇 초 이어져 자동 종료된 경우) 마이크가 영영 안 켜질 수 있다.
+        // 살짝 텀을 두고 다시 시작하면 훨씬 안정적으로 계속 듣게 된다.
+        if (tpVoiceRecognition === recognition && !tinypingState.revealed) {
+            setTimeout(function () {
+                if (tpVoiceRecognition === recognition && !tinypingState.revealed) {
+                    try { recognition.start(); } catch (e) { }
+                }
+            }, 300);
+        }
+    };
 
-    try { tpVoiceRecognition.start(); } catch (e) { }
+    tpVoiceRecognition = recognition;
+    try { recognition.start(); } catch (e) { }
 }
 function tpNormalizeSpeechText(s) {
     return String(s).replace(/\s+/g, '').trim();
@@ -545,7 +539,11 @@ function startTinypingNextVoiceListener() {
     recognition.onerror = function () { };
     recognition.onend = function () {
         if (tpVoiceRecognition === recognition) {
-            try { recognition.start(); } catch (e) { }
+            setTimeout(function () {
+                if (tpVoiceRecognition === recognition) {
+                    try { recognition.start(); } catch (e) { }
+                }
+            }, 300);
         }
     };
 
@@ -553,8 +551,6 @@ function startTinypingNextVoiceListener() {
     try { recognition.start(); } catch (e) { }
 }
 function handleTinypingVoiceResult(transcripts) {
-    if (tinypingState.timerId) { clearInterval(tinypingState.timerId); tinypingState.timerId = null; }
-    if (tinypingState.hintTimerId) { clearTimeout(tinypingState.hintTimerId); tinypingState.hintTimerId = null; }
     var target = tpNormalizeSpeechText(tinypingState.current.name);
     var matched = transcripts.some(function (t) {
         var n = tpNormalizeSpeechText(t);
@@ -563,9 +559,19 @@ function handleTinypingVoiceResult(transcripts) {
     });
     tinypingState.voiceSaid = transcripts[0] || '(인식된 말이 없어요)';
     tinypingState.voiceMatched = matched;
+
+    if (!matched) {
+        // 정답이 아니면 라운드를 끝내지 않는다. 마이크는 onend에서 자동으로 다시 듣기 시작한다.
+        var st = document.getElementById('tpVoiceStatus');
+        if (st) st.innerText = '🎙️ "' + tinypingState.voiceSaid + '"라고 들었어요. 다시 말해볼까요?';
+        return;
+    }
+
+    stopVoiceRecognition();
+    if (tinypingState.timerId) { clearInterval(tinypingState.timerId); tinypingState.timerId = null; }
     tinypingState.revealed = true;
-    tinypingState.hintShown = true;
     tinypingState.totalCount++;
-    if (matched) { tinypingState.correctCount++; tinypingState.showSuccess = true; }
+    tinypingState.correctCount++;
+    tinypingState.showSuccess = true;
     renderTinyping();
 }
