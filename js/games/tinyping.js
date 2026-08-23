@@ -163,6 +163,9 @@ var TINYPING_GEN_LABEL = {
     '4기': '디저트 티니핑', '5기': '스타 티니핑', '6기': '프린세스 티니핑'
 };
 var TINYPING_TYPE_ORDER = ['로열 티니핑', '일반 티니핑', '레전드 티니핑'];
+var TINYPING_TYPE_SHORT_LABEL = {
+    '로열 티니핑': '로열핑', '일반 티니핑': '일반핑', '레전드 티니핑': '레전드핑'
+};
 var TINYPING_TIME_OPTIONS = [{ v: 10, l: '10초' }, { v: 15, l: '15초' }, { v: 20, l: '20초' }, { v: 0, l: '무제한' }];
 var TINYPING_TITLE = '🎀 티니핑 맞히기!';
 
@@ -212,8 +215,9 @@ function renderTinypingSetup() {
     html += '<button class="setup-btn tinyping-gen-all' + (allGens ? ' active' : '') + '" onclick="toggleTinypingGenAll()">전체</button>';
     TINYPING_GEN_ORDER.forEach(function (g) {
         var active = tinypingSettings.gens.indexOf(g) > -1;
+        var shortLabel = TINYPING_GEN_LABEL[g].replace('티니핑', '').trim();
         html += '<button class="setup-btn' + (active ? ' active' : '') + '" onclick="toggleTinypingGen(\'' + g + '\')">' +
-            '<span class="tinyping-gen-num">' + g + '</span><span class="tinyping-gen-name">(' + TINYPING_GEN_LABEL[g] + ')</span></button>';
+            '<span class="tinyping-gen-num">' + g + '</span><span class="tinyping-gen-name">(' + shortLabel + ')</span></button>';
     });
     html += '</div>';
 
@@ -221,11 +225,11 @@ function renderTinypingSetup() {
     html += '<button class="setup-btn' + (allTypes ? ' active' : '') + '" onclick="toggleTinypingTypeAll()">전체</button>';
     TINYPING_TYPE_ORDER.forEach(function (t) {
         var active = tinypingSettings.types.indexOf(t) > -1;
-        html += '<button class="setup-btn' + (active ? ' active' : '') + '" onclick="toggleTinypingType(\'' + t + '\')">' + t + '</button>';
+        html += '<button class="setup-btn' + (active ? ' active' : '') + '" onclick="toggleTinypingType(\'' + t + '\')">' + TINYPING_TYPE_SHORT_LABEL[t] + '</button>';
     });
     html += '</div>';
 
-    html += '<div class="setup-section-label">제한 시간</div><div class="setup-btn-group">';
+    html += '<div class="setup-section-label">제한 시간</div><div class="tinyping-type-grid">';
     TINYPING_TIME_OPTIONS.forEach(function (t) {
         html += '<button class="setup-btn' + (tinypingSettings.timeLimit === t.v ? ' active' : '') + '" onclick="setTinypingTimeLimit(' + t.v + ')">' + t.l + '</button>';
     });
