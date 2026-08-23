@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "티니핑 맞히기!",
+  "short_name": "티니핑맞히기",
+  "description": "티니핑 캐릭터 사진을 보고 이름을 맞히는 음성인식 퀴즈 게임",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "ko",
+  "background_color": "#fff0f6",
+  "theme_color": "#ff5ca8",
+  "icons": [
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
