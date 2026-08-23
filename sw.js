@@ -1,12 +1,12 @@
-var CACHE_NAME = 'tinyping-quiz-v1';
+var CACHE_NAME = 'tinyping-quiz-v2';
 var PRECACHE_URLS = [
-    '/',
-    '/index.html',
-    '/manifest.json',
-    '/css/style.css',
-    '/js/main.js',
-    '/js/games/tinyping.js',
-    '/icon-512x512.png'
+    '/Teenieping/',
+    '/Teenieping/index.html',
+    '/Teenieping/manifest.json',
+    '/Teenieping/css/style.css',
+    '/Teenieping/js/main.js',
+    '/Teenieping/js/games/tinyping.js',
+    '/Teenieping/icon-512x512.png'
 ];
 
 self.addEventListener('install', function (e) {
@@ -46,7 +46,7 @@ self.addEventListener('fetch', function (e) {
                 }
                 return response;
             }).catch(function () {
-                if (e.request.mode === 'navigate') return caches.match('/index.html');
+                if (e.request.mode === 'navigate') return caches.match('/Teenieping/index.html');
             });
         })
     );

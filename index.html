@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>티니핑 맞히기!</title>
     <link rel="stylesheet" href="css/style.css">
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/Teenieping/manifest.json">
     <meta name="theme-color" content="#ff5ca8">
-    <link rel="icon" href="/icon-512x512.png">
-    <link rel="apple-touch-icon" href="/icon-512x512.png">
+    <link rel="icon" href="/Teenieping/icon-512x512.png">
+    <link rel="apple-touch-icon" href="/Teenieping/icon-512x512.png">
 </head>
 <body>
     <div class="app-container">
@@ -28,7 +28,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('/sw.js').catch(function (err) {
+                navigator.serviceWorker.register('/Teenieping/sw.js').catch(function (err) {
                     console.warn('SW registration failed:', err);
                 });
             });
