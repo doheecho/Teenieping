@@ -1,5 +1,5 @@
 var CACHE_PREFIX = 'tinyping-quiz-';
-var CACHE_NAME = CACHE_PREFIX + 'v3';
+var CACHE_NAME = CACHE_PREFIX + 'v4';
 var PRECACHE_URLS = [
     '/Teenieping/',
     '/Teenieping/index.html',
@@ -7,7 +7,10 @@ var PRECACHE_URLS = [
     '/Teenieping/css/style.css',
     '/Teenieping/js/main.js',
     '/Teenieping/js/games/tinyping.js',
-    '/Teenieping/icon-512x512.png'
+    '/Teenieping/favicon.svg',
+    '/Teenieping/icon-192x192.png',
+    '/Teenieping/icon-512x512.png',
+    '/Teenieping/icon-maskable-512.png'
 ];
 
 self.addEventListener('install', function (e) {

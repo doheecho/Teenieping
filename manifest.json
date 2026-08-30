@@ -11,11 +11,8 @@
   "background_color": "#fff0f6",
   "theme_color": "#ff5ca8",
   "icons": [
-    {
-      "src": "/Teenieping/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    }
+    { "src": "/Teenieping/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/Teenieping/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/Teenieping/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
