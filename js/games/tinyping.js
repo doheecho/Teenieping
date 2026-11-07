@@ -469,6 +469,7 @@ function resetTinypingRoundState() {
     tinypingState.timedOut = false;
     tinypingState.showSuccess = false;
     tinypingState.answerSpoken = false;
+    tinypingState.wrongAttempts = 0;
     tinypingState.timeLeft = tinypingSettings.timeLimit;
     tinypingState.timerId = null;
 }
@@ -742,7 +743,14 @@ function handleTinypingVoiceResult(transcripts) {
     tinypingState.voiceMatched = matched;
 
     if (!matched) {
-        // 정답이 아니면 라운드를 끝내지 않는다. 마이크는 onend에서 자동으로 다시 듣기 시작한다.
+        tinypingState.wrongAttempts++;
+        if (tinypingState.wrongAttempts >= 2) {
+            // 한 번 더 기회를 줬는데도 또 틀리면, 더 듣지 않고 바로 정답을 보여준다.
+            revealTinyping(true);
+            return;
+        }
+        // 처음 틀렸을 때는 라운드를 끝내지 않고 한 번 더 들어본다.
+        // 마이크는 onend에서 자동으로 다시 듣기 시작한다.
         var st = document.getElementById('tpVoiceStatus');
         if (st) st.innerText = '🎙️ "' + tinypingState.voiceSaid + '"라고 들었어요. 다시 말해볼까요?';
         return;

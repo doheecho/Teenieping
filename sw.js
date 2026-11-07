@@ -1,5 +1,5 @@
 var CACHE_PREFIX = 'tinyping-quiz-';
-var CACHE_NAME = CACHE_PREFIX + 'v5';
+var CACHE_NAME = CACHE_PREFIX + 'v6';
 var PRECACHE_URLS = [
     '/Teenieping/',
     '/Teenieping/index.html',
