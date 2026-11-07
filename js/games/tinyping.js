@@ -190,9 +190,13 @@ var tinypingState = {};
 var TP_SPEECH_SUPPORTED = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 var tpVoiceRecognition = null;
 
-// ===== 정답을 음성으로 읽어주기 (TTS, 설정에서 목소리 선택 가능) =====
+// ===== 정답을 음성으로 읽어주기 (TTS, 팝업 설정에서 목소리/방식 선택 가능) =====
+// 언어는 한국어만 지원한다: 기기에 설치된 음성 중 한국어(lang이 'ko'로 시작)가 아닌 것은
+// 절대 사용하지 않는다 (한국어 음성이 없으면 안내만 하고, 인도어 등 엉뚱한 외국어 음성으로
+// 새어나가지 않도록 막는다).
 var TP_SPEECH_SYNTH_SUPPORTED = !!window.speechSynthesis;
 var TP_VOICE_STORAGE_KEY = 'tinypingVoiceURI';
+var TP_ANSWER_STYLE_KEY = 'tinypingAnswerStyle';
 var tpVoicesList = [];
 function tpLoadVoices() {
     if (!TP_SPEECH_SYNTH_SUPPORTED) return;
@@ -201,25 +205,32 @@ function tpLoadVoices() {
 if (TP_SPEECH_SYNTH_SUPPORTED) {
     tpLoadVoices();
     // 목소리 목록은 비동기로 늦게 채워지는 브라우저가 많아서, 준비되면 다시 읽어오고
-    // 설정 화면이 열려있으면 새로 그려서 목록에 반영한다.
+    // 설정 팝업이 열려있으면 새로 그려서 목록에 반영한다.
     window.speechSynthesis.onvoiceschanged = function () {
         tpLoadVoices();
-        if (document.getElementById('tinypingVoiceSection')) { renderTinypingSetup(); }
+        if (document.getElementById('tpSettingsOverlay')) { renderTinypingSettingsModal(); }
     };
+}
+function getTinypingKoreanVoices() {
+    return tpVoicesList.filter(function (v) { return v.lang && v.lang.toLowerCase().indexOf('ko') === 0; });
 }
 function tpGetSavedVoiceURI() {
     try { return localStorage.getItem(TP_VOICE_STORAGE_KEY) || ''; } catch (e) { return ''; }
 }
 function getTinypingSelectedVoice() {
     if (!TP_SPEECH_SYNTH_SUPPORTED) return null;
+    var koreanVoices = getTinypingKoreanVoices();
+    if (koreanVoices.length === 0) return null; // 한국어 음성이 아예 없는 기기: 외국어 음성으로 새지 않도록 null 반환
     var uri = tpGetSavedVoiceURI();
-    if (!uri) return null;
-    var found = tpVoicesList.filter(function (v) { return v.voiceURI === uri; });
-    return found[0] || null;
+    if (uri) {
+        var found = koreanVoices.filter(function (v) { return v.voiceURI === uri; })[0];
+        if (found) return found;
+    }
+    return koreanVoices[0]; // 선택된 적 없거나 더 이상 존재하지 않으면 한국어 음성 중 첫 번째를 기본값으로
 }
 function setTinypingVoice(uri) {
     try { localStorage.setItem(TP_VOICE_STORAGE_KEY, uri || ''); } catch (e) { }
-    renderTinypingSetup();
+    renderTinypingSettingsModal();
 }
 // 설치된 TTS 목소리 이름에서 남/여를 대략적으로 추정한다 (완벽하지 않은 보조 정보용).
 function tpGuessVoiceGender(name) {
@@ -230,16 +241,109 @@ function tpGuessVoiceGender(name) {
     for (var i = 0; i < maleHints.length; i++) { if (n.indexOf(maleHints[i]) > -1) return '남자'; }
     return '';
 }
-function speakTinypingAnswer(text) {
-    if (!TP_SPEECH_SYNTH_SUPPORTED) return;
+// 한국어 음성들을 여자/남자/기타(구분 불가)로 묶는다. 같은 성별이 여러 개면 첫 번째만 대표로 쓴다.
+function tpBuildVoiceGenderGroups(koreanVoices) {
+    var groups = { female: null, male: null, other: [] };
+    koreanVoices.forEach(function (v) {
+        var g = tpGuessVoiceGender(v.name);
+        if (g === '여자' && !groups.female) { groups.female = v; }
+        else if (g === '남자' && !groups.male) { groups.male = v; }
+        else if (!g) { groups.other.push(v); }
+    });
+    return groups;
+}
+function tpGetAnswerStyle() {
+    try { return localStorage.getItem(TP_ANSWER_STYLE_KEY) || 'nameOnly'; } catch (e) { return 'nameOnly'; }
+}
+function setTinypingAnswerStyle(style) {
+    try { localStorage.setItem(TP_ANSWER_STYLE_KEY, style); } catch (e) { }
+    renderTinypingSettingsModal();
+}
+function speakTinypingAnswer(text, isCorrect, onEnd) {
+    if (!TP_SPEECH_SYNTH_SUPPORTED) { if (onEnd) onEnd(); return; }
     try {
         window.speechSynthesis.cancel(); // 이전에 읽던 말이 남아있으면 정리하고 새로 읽는다.
-        var utter = new SpeechSynthesisUtterance(text);
+        var style = tpGetAnswerStyle();
+        var spoken = (isCorrect && style === 'correctPrefix') ? ('정답! ' + text) : text;
+        var utter = new SpeechSynthesisUtterance(spoken);
         var voice = getTinypingSelectedVoice();
         utter.lang = voice ? voice.lang : 'ko-KR';
         if (voice) { utter.voice = voice; }
+        if (onEnd) { utter.onend = onEnd; utter.onerror = onEnd; }
         window.speechSynthesis.speak(utter);
-    } catch (e) { }
+    } catch (e) { if (onEnd) onEnd(); }
+}
+// 답을 말했을 때(정답/오답 모두) 캐릭터 이미지가 정답창 너비만큼 커졌다가 자연스레 다시 작아진다.
+function tpPopImageBox() {
+    var box = document.querySelector('.tinyping-image-box');
+    if (!box) return;
+    box.classList.add('tinyping-image-pop');
+    setTimeout(function () { box.classList.remove('tinyping-image-pop'); }, 420);
+}
+
+// ===== 설정 팝업 (목소리 / 정답 방식, 메인 설정 화면과 별도의 모달) =====
+var tinypingUiState = { settingsTab: 'voice' };
+function openTinypingSettings() {
+    tinypingUiState.settingsTab = 'voice';
+    renderTinypingSettingsModal();
+}
+function closeTinypingSettings() {
+    var el = document.getElementById('tpSettingsOverlay');
+    if (el) el.parentNode.removeChild(el);
+}
+function setTinypingSettingsTab(tab) {
+    tinypingUiState.settingsTab = tab;
+    renderTinypingSettingsModal();
+}
+function buildTinypingVoiceTabHtml() {
+    if (!TP_SPEECH_SYNTH_SUPPORTED) {
+        return '<div class="tinyping-voice-status">이 기기/브라우저는 음성 읽어주기를 지원하지 않아요.</div>';
+    }
+    var koreanVoices = getTinypingKoreanVoices();
+    var html = '<div class="setup-section-label">정답을 읽어주는 목소리</div>';
+    if (koreanVoices.length === 0) {
+        html += '<div class="tinyping-voice-status">이 기기에 설치된 한국어 음성을 찾지 못했어요. 기기 설정에서 한국어 TTS(음성 합성)를 설치하면 사용할 수 있어요.</div>';
+        return html;
+    }
+    var groups = tpBuildVoiceGenderGroups(koreanVoices);
+    var selected = getTinypingSelectedVoice();
+    html += '<div class="tinyping-type-grid">';
+    if (groups.female) {
+        html += '<button class="setup-btn' + (selected && selected.voiceURI === groups.female.voiceURI ? ' active' : '') + '" onclick="setTinypingVoice(\'' + groups.female.voiceURI.replace(/'/g, "\\'") + '\')">👩 여자 목소리</button>';
+    }
+    if (groups.male) {
+        html += '<button class="setup-btn' + (selected && selected.voiceURI === groups.male.voiceURI ? ' active' : '') + '" onclick="setTinypingVoice(\'' + groups.male.voiceURI.replace(/'/g, "\\'") + '\')">👨 남자 목소리</button>';
+    }
+    groups.other.forEach(function (v) {
+        var safeUri = v.voiceURI.replace(/'/g, "\\'");
+        html += '<button class="setup-btn' + (selected && selected.voiceURI === v.voiceURI ? ' active' : '') + '" onclick="setTinypingVoice(\'' + safeUri + '\')">' + v.name + '</button>';
+    });
+    html += '</div>';
+    html += '<button class="action-btn secondary" style="font-size:0.85rem; padding:0.5rem 0.8rem;" onclick="speakTinypingAnswer(\'안녕하세요\', false)">🔊 미리 듣기</button>';
+    return html;
+}
+function buildTinypingAnswerStyleTabHtml() {
+    var style = tpGetAnswerStyle();
+    var html = '<div class="setup-section-label">정답을 맞췄을 때 읽어주는 방식</div><div class="tinyping-type-grid">';
+    html += '<button class="setup-btn' + (style === 'nameOnly' ? ' active' : '') + '" onclick="setTinypingAnswerStyle(\'nameOnly\')">이름만 (예: "하츄핑")</button>';
+    html += '<button class="setup-btn' + (style === 'correctPrefix' ? ' active' : '') + '" onclick="setTinypingAnswerStyle(\'correctPrefix\')">정답! + 이름 (예: "정답! 하츄핑")</button>';
+    html += '</div><div class="tinyping-voice-status">오답이거나 시간이 끝났을 땐 항상 이름만 말해줘요.</div>';
+    return html;
+}
+function renderTinypingSettingsModal() {
+    var tab = tinypingUiState.settingsTab;
+    var html = '<div class="tp-modal-overlay" id="tpSettingsOverlay" onclick="if(event.target===this){closeTinypingSettings();}">';
+    html += '<div class="tp-modal-box">';
+    html += '<div class="tp-modal-header"><div class="tp-modal-title">⚙️ 설정</div><button class="tp-modal-close" onclick="closeTinypingSettings()">✕</button></div>';
+    html += '<div class="tp-modal-tabs">';
+    html += '<button class="tp-modal-tab' + (tab === 'voice' ? ' active' : '') + '" onclick="setTinypingSettingsTab(\'voice\')">🔊 목소리</button>';
+    html += '<button class="tp-modal-tab' + (tab === 'style' ? ' active' : '') + '" onclick="setTinypingSettingsTab(\'style\')">🗣️ 정답 방식</button>';
+    html += '</div>';
+    html += '<div class="tp-modal-body">' + (tab === 'voice' ? buildTinypingVoiceTabHtml() : buildTinypingAnswerStyleTabHtml()) + '</div>';
+    html += '</div></div>';
+
+    var existing = document.getElementById('tpSettingsOverlay');
+    if (existing) { existing.outerHTML = html; } else { document.body.insertAdjacentHTML('beforeend', html); }
 }
 
 function initTinypingQuiz() {
@@ -287,26 +391,7 @@ function renderTinypingSetup() {
     });
     html += '</div>';
 
-    if (TP_SPEECH_SYNTH_SUPPORTED) {
-        var savedVoiceURI = tpGetSavedVoiceURI();
-        var koreanVoices = tpVoicesList.filter(function (v) { return v.lang && v.lang.toLowerCase().indexOf('ko') === 0; });
-        var voiceChoices = koreanVoices.length ? koreanVoices : tpVoicesList;
-        html += '<div class="setup-section-label" id="tinypingVoiceSection">정답을 읽어주는 목소리 🔊</div><div class="tinyping-type-grid">';
-        html += '<button class="setup-btn' + (savedVoiceURI === '' ? ' active' : '') + '" onclick="setTinypingVoice(\'\')">기본 목소리</button>';
-        voiceChoices.forEach(function (v) {
-            var active = savedVoiceURI === v.voiceURI;
-            var gender = tpGuessVoiceGender(v.name);
-            var label = (gender ? gender + ' · ' : '') + v.name;
-            var safeUri = v.voiceURI.replace(/'/g, "\\'");
-            html += '<button class="setup-btn' + (active ? ' active' : '') + '" onclick="setTinypingVoice(\'' + safeUri + '\')">' + label + '</button>';
-        });
-        html += '</div>';
-        if (voiceChoices.length === 0) {
-            html += '<div class="tinyping-voice-status">이 기기에 설치된 목소리를 아직 찾지 못했어요. 잠시 후 다시 열어보면 나타나요.</div>';
-        } else {
-            html += '<button class="action-btn secondary" style="font-size:0.85rem; padding:0.5rem 0.8rem; margin-bottom:1rem;" onclick="speakTinypingAnswer(\'안녕하세요\')">🔊 목소리 미리 듣기</button>';
-        }
-    }
+    html += '<button class="action-btn secondary" style="margin-bottom:1.2rem;" onclick="openTinypingSettings()">⚙️ 목소리 · 정답 방식 설정</button>';
 
     html += '<button class="action-btn" ' + (pool.length === 0 ? 'disabled' : '') + ' onclick="startTinypingSession()">시작하기 🚀 (' + pool.length + '개 중에서)</button>';
     document.getElementById('mainArea').innerHTML = html;
@@ -440,6 +525,7 @@ function renderTinyping() {
                 html += '<div class="game-sub-desc">내가 말한 것: "' + tinypingState.voiceSaid + '"</div>';
             }
             html += '<div class="msg-box good" style="display:block;">🎉 ' + (tinypingState.voiceSaid !== undefined ? '정답을 정확히 말했어요!' : '정답이에요!') + '</div>';
+            if (TP_SPEECH_SUPPORTED) { html += '<div class="tinyping-voice-status">🎤 "다음" 또는 "다음 문제"라고 말해도 넘어가요</div>'; }
             html += buildStandardResultButtons('nextTinypingQuestion()', 'retryTinypingQuestion()', 'initTinypingQuiz()');
         } else if (tinypingState.voiceSaid !== undefined) {
             html += '<div class="game-sub-desc">내가 말한 것: "' + tinypingState.voiceSaid + '"</div>';
@@ -459,9 +545,13 @@ function renderTinyping() {
     document.getElementById('mainArea').innerHTML = html;
 
     // 정답이 화면에 뜨는 순간, 이번 라운드에서 딱 한 번만 음성으로 읽어준다.
+    // 정답을 맞춘 경우엔 TTS가 끝난 뒤에 "다음" 음성 명령을 듣기 시작한다 (말하는 도중 마이크가
+    // 같이 켜져 있으면 TTS 소리를 마이크가 주워듣고 오작동할 수 있어서).
     if (tinypingState.revealed && !tinypingState.answerSpoken) {
         tinypingState.answerSpoken = true;
-        speakTinypingAnswer(c.name);
+        speakTinypingAnswer(c.name, tinypingState.showSuccess, function () {
+            if (tinypingState.showSuccess && TP_SPEECH_SUPPORTED) { startTinypingNextVoiceListener(); }
+        });
     }
 }
 
@@ -493,6 +583,8 @@ function overrideTinypingCorrect() {
     tinypingState.correctCount++;
     tinypingState.showSuccess = true;
     renderTinyping();
+    // 이 경로는 이미 한 번 이름을 읽어준 뒤라 다시 TTS를 틀지 않으므로, 여기서 바로 "다음" 듣기를 시작한다.
+    if (TP_SPEECH_SUPPORTED) { startTinypingNextVoiceListener(); }
 }
 
 function stopVoiceRecognition() {
@@ -517,9 +609,12 @@ function startVoiceAnswer() {
     recognition.continuous = true; // 중간에 끊기고 다시 시작하는 횟수를 줄여서 마이크 시작음이 덜 울리게 한다.
 
     recognition.onresult = function (event) {
+        // continuous 모드에서는 event.results에 이전 발화까지 계속 쌓이므로,
+        // 항상 가장 마지막(이번에 새로 들어온) 결과만 읽어야 한다.
+        var last = event.results[event.results.length - 1];
         var transcripts = [];
-        for (var i = 0; i < event.results[0].length; i++) {
-            transcripts.push(event.results[0][i].transcript);
+        for (var i = 0; i < last.length; i++) {
+            transcripts.push(last[i].transcript);
         }
         handleTinypingVoiceResult(transcripts);
     };
@@ -589,6 +684,43 @@ function tpSpeechSimilarity(a, b) {
 }
 var TP_VOICE_MATCH_THRESHOLD = 0.5; // 정확도 50% 이상이면 정답으로 인정
 
+// 정답 화면에서 "다음" 또는 "다음 문제"라고 말하면 다음 문제로 넘어간다 (정답을 맞춘 뒤에만 켜짐).
+// 알아듣지 못하거나 다른 말이면 onend에서 이 인스턴스가 여전히 유효한지(아직 정답 화면인지)
+// 확인한 뒤 다시 듣기를 반복한다.
+function startTinypingNextVoiceListener() {
+    var SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) return;
+    stopVoiceRecognition();
+
+    var recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'ko-KR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 3;
+    recognition.continuous = true;
+
+    recognition.onresult = function (event) {
+        var last = event.results[event.results.length - 1];
+        var isNext = false;
+        for (var i = 0; i < last.length; i++) {
+            if (tpNormalizeSpeechText(last[i].transcript).indexOf('다음') > -1) { isNext = true; }
+        }
+        if (isNext) { nextTinypingQuestion(); }
+    };
+    recognition.onerror = function () { };
+    recognition.onend = function () {
+        if (tpVoiceRecognition === recognition && tinypingState.showSuccess) {
+            setTimeout(function () {
+                if (tpVoiceRecognition === recognition && tinypingState.showSuccess) {
+                    try { recognition.start(); } catch (e) { }
+                }
+            }, 300);
+        }
+    };
+
+    tpVoiceRecognition = recognition;
+    try { recognition.start(); } catch (e) { }
+}
+
 function handleTinypingVoiceResult(transcripts) {
     var target = tpNormalizeSpeechText(tinypingState.current.name);
     var matched = transcripts.some(function (t) {
@@ -603,6 +735,7 @@ function handleTinypingVoiceResult(transcripts) {
         // 정답이 아니면 라운드를 끝내지 않는다. 마이크는 onend에서 자동으로 다시 듣기 시작한다.
         var st = document.getElementById('tpVoiceStatus');
         if (st) st.innerText = '🎙️ "' + tinypingState.voiceSaid + '"라고 들었어요. 다시 말해볼까요?';
+        tpPopImageBox(); // 오답이어도 답을 말했으니 캐릭터 이미지가 한 번 커졌다가 작아진다.
         return;
     }
 
@@ -613,4 +746,5 @@ function handleTinypingVoiceResult(transcripts) {
     tinypingState.correctCount++;
     tinypingState.showSuccess = true;
     renderTinyping();
+    tpPopImageBox(); // 화면이 새로 그려진 뒤에 걸어야 애니메이션이 유지된다.
 }
