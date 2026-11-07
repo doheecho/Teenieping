@@ -191,9 +191,11 @@ var TP_SPEECH_SUPPORTED = !!(window.SpeechRecognition || window.webkitSpeechReco
 var tpVoiceRecognition = null;
 
 // ===== 정답을 음성으로 읽어주기 (TTS, 팝업 설정에서 목소리/방식 선택 가능) =====
-// 언어는 한국어만 지원한다: 기기에 설치된 음성 중 한국어(lang이 'ko'로 시작)가 아닌 것은
-// 절대 사용하지 않는다 (한국어 음성이 없으면 안내만 하고, 인도어 등 엉뚱한 외국어 음성으로
-// 새어나가지 않도록 막는다).
+// 기본값은 기기의 시스템 설정을 그대로 따른다 (voice/lang을 아예 지정하지 않음).
+// PC는 한국어 음성이 깔려있어 잘 되지만, 안드로이드 기기는 한국어 음성이 따로 설치되어
+// 있지 않은 경우가 많아서 'ko-KR'을 강제로 지정하면 아예 소리가 안 나는 경우가 있다.
+// 그래서 사용자가 직접 고르지 않으면 언어/목소리를 강제하지 않고, 설정 팝업에서는
+// 기기에 설치된 모든 목소리 중에서 원하는 것을 선택할 수 있게 한다.
 var TP_SPEECH_SYNTH_SUPPORTED = !!window.speechSynthesis;
 var TP_VOICE_STORAGE_KEY = 'tinypingVoiceURI';
 var TP_ANSWER_STYLE_KEY = 'tinypingAnswerStyle';
@@ -223,16 +225,13 @@ function getTinypingKoreanVoices() {
 function tpGetSavedVoiceURI() {
     try { return localStorage.getItem(TP_VOICE_STORAGE_KEY) || ''; } catch (e) { return ''; }
 }
+// null을 반환하면 "기본값" 상태를 뜻하며, 이때는 utter.voice/utter.lang을 아예 지정하지 않고
+// 기기의 시스템 설정(기본 언어·기본 목소리)을 그대로 따르게 둔다.
 function getTinypingSelectedVoice() {
     if (!TP_SPEECH_SYNTH_SUPPORTED) return null;
-    var koreanVoices = getTinypingKoreanVoices();
-    if (koreanVoices.length === 0) return null; // 한국어 음성이 아예 없는 기기: 외국어 음성으로 새지 않도록 null 반환
     var uri = tpGetSavedVoiceURI();
-    if (uri) {
-        var found = koreanVoices.filter(function (v) { return v.voiceURI === uri; })[0];
-        if (found) return found;
-    }
-    return koreanVoices[0]; // 선택된 적 없거나 더 이상 존재하지 않으면 한국어 음성 중 첫 번째를 기본값으로
+    if (!uri) return null; // 직접 고른 적 없음 → 기본값(시스템 설정)
+    return tpVoicesList.filter(function (v) { return v.voiceURI === uri; })[0] || null;
 }
 function setTinypingVoice(uri) {
     try { localStorage.setItem(TP_VOICE_STORAGE_KEY, uri || ''); } catch (e) { }
@@ -273,8 +272,14 @@ function speakTinypingAnswer(text, isCorrect, onEnd) {
         var spoken = (isCorrect && style === 'correctPrefix') ? ('정답! ' + text) : text;
         var utter = new SpeechSynthesisUtterance(spoken);
         var voice = getTinypingSelectedVoice();
-        utter.lang = voice ? voice.lang : 'ko-KR';
-        if (voice) { utter.voice = voice; }
+        if (voice) {
+            // 사용자가 직접 고른 목소리가 있을 때만 voice/lang을 지정한다.
+            utter.voice = voice;
+            utter.lang = voice.lang;
+        }
+        // voice가 없으면(기본값) lang도 지정하지 않는다 — 'ko-KR'을 강제하면 한국어 음성이
+        // 없는 기기(일부 안드로이드 등)에서는 아예 아무 소리도 안 나기 때문에, 그냥 기기의
+        // 시스템 기본 설정 그대로 읽게 둔다.
         if (onEnd) { utter.onend = onEnd; utter.onerror = onEnd; }
         window.speechSynthesis.speak(utter);
     } catch (e) { if (onEnd) onEnd(); }
@@ -293,30 +298,37 @@ function setTinypingSettingsTab(tab) {
     tinypingUiState.settingsTab = tab;
     renderTinypingSettingsModal();
 }
+function tpVoiceSetupBtnHtml(voice, label, savedUri) {
+    var active = savedUri === voice.voiceURI;
+    var safeUri = voice.voiceURI.replace(/'/g, "\\'");
+    return '<button class="setup-btn' + (active ? ' active' : '') + '" onclick="setTinypingVoice(\'' + safeUri + '\')">' + label + '</button>';
+}
 function buildTinypingVoiceTabHtml() {
     if (!TP_SPEECH_SYNTH_SUPPORTED) {
         return '<div class="tinyping-voice-status">이 기기/브라우저는 음성 읽어주기를 지원하지 않아요.</div>';
     }
+    var savedUri = tpGetSavedVoiceURI();
     var koreanVoices = getTinypingKoreanVoices();
+    var otherVoices = tpVoicesList.filter(function (v) { return koreanVoices.indexOf(v) === -1; });
+
     var html = '<div class="setup-section-label">정답을 읽어주는 목소리</div>';
-    if (koreanVoices.length === 0) {
-        html += '<div class="tinyping-voice-status">이 기기에 설치된 한국어 음성을 찾지 못했어요. 기기 설정에서 한국어 TTS(음성 합성)를 설치하면 사용할 수 있어요.</div>';
-        return html;
-    }
-    var groups = tpBuildVoiceGenderGroups(koreanVoices);
-    var selected = getTinypingSelectedVoice();
+    html += '<div class="tinyping-voice-status">기본값은 기기의 시스템 설정(기본 언어·목소리)을 그대로 따라요.</div>';
     html += '<div class="tinyping-type-grid">';
-    if (groups.female) {
-        html += '<button class="setup-btn' + (selected && selected.voiceURI === groups.female.voiceURI ? ' active' : '') + '" onclick="setTinypingVoice(\'' + groups.female.voiceURI.replace(/'/g, "\\'") + '\')">👩 여자 목소리</button>';
+    html += '<button class="setup-btn' + (savedUri === '' ? ' active' : '') + '" onclick="setTinypingVoice(\'\')">⚙️ 기본값 (시스템 설정)</button>';
+
+    if (koreanVoices.length) {
+        var groups = tpBuildVoiceGenderGroups(koreanVoices);
+        if (groups.female) { html += tpVoiceSetupBtnHtml(groups.female, '👩 여자 목소리', savedUri); }
+        if (groups.male) { html += tpVoiceSetupBtnHtml(groups.male, '👨 남자 목소리', savedUri); }
+        groups.other.forEach(function (v) { html += tpVoiceSetupBtnHtml(v, v.name, savedUri); });
     }
-    if (groups.male) {
-        html += '<button class="setup-btn' + (selected && selected.voiceURI === groups.male.voiceURI ? ' active' : '') + '" onclick="setTinypingVoice(\'' + groups.male.voiceURI.replace(/'/g, "\\'") + '\')">👨 남자 목소리</button>';
-    }
-    groups.other.forEach(function (v) {
-        var safeUri = v.voiceURI.replace(/'/g, "\\'");
-        html += '<button class="setup-btn' + (selected && selected.voiceURI === v.voiceURI ? ' active' : '') + '" onclick="setTinypingVoice(\'' + safeUri + '\')">' + v.name + '</button>';
-    });
+    // 한국어 음성이 없는 기기(특히 일부 안드로이드)에서도 설치된 다른 목소리 중에서 고를 수 있게 한다.
+    otherVoices.forEach(function (v) { html += tpVoiceSetupBtnHtml(v, v.name + ' (' + v.lang + ')', savedUri); });
     html += '</div>';
+
+    if (koreanVoices.length === 0) {
+        html += '<div class="tinyping-voice-status">이 기기에는 한국어 음성이 따로 설치돼 있지 않아요. "기본값"을 쓰면 기기의 시스템 설정대로 읽어주고, 위 목록에서 설치된 다른 목소리를 선택할 수도 있어요.</div>';
+    }
     html += '<button class="action-btn secondary" style="font-size:0.85rem; padding:0.5rem 0.8rem;" onclick="speakTinypingAnswer(\'안녕하세요\', false)">🔊 미리 듣기</button>';
     return html;
 }
