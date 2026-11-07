@@ -179,9 +179,9 @@ h1 { font-size: 1.1rem; margin: 0; text-align: left; }
     transition: width 0.1s linear;
 }
 
-/* ===== 티니핑 캐릭터 이미지 ===== */
+/* ===== 티니핑 캐릭터 이미지 (정답창과 같은 가로너비로 문제가 나올 때부터 쭉 크게 보여준다) ===== */
 .tinyping-image-box {
-    width: 75%;
+    width: 100%;
     aspect-ratio: 1 / 1;
     margin: 0 auto 1rem auto;
     background: #fff5fa;
@@ -192,11 +192,6 @@ h1 { font-size: 1.1rem; margin: 0; text-align: left; }
     justify-content: center;
     overflow: hidden;
     box-shadow: 0 6px 14px rgba(255, 92, 168, 0.18);
-    transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-/* 답을 말했을 때(정답/오답 모두) 정답창 가로너비(100%)만큼 커졌다가, 클래스가 빠지면서 자연스레 다시 작아진다. */
-.tinyping-image-box.tinyping-image-pop {
-    width: 100%;
 }
 .tinyping-image-box img {
     max-width: 92%;

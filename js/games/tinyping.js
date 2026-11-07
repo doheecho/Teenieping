@@ -212,7 +212,13 @@ if (TP_SPEECH_SYNTH_SUPPORTED) {
     };
 }
 function getTinypingKoreanVoices() {
-    return tpVoicesList.filter(function (v) { return v.lang && v.lang.toLowerCase().indexOf('ko') === 0; });
+    // 'ko'로 "시작하기만" 하면 통과시키면 'kok'(인도 콘칸어) 같은 언어 코드까지 한국어로
+    // 잘못 걸러져서 인도어 목소리가 섞여 들어온다. 'ko' 단독이거나 'ko-KR'처럼 'ko-'로
+    // 시작하는 경우만 한국어로 인정한다.
+    return tpVoicesList.filter(function (v) {
+        var lang = (v.lang || '').toLowerCase();
+        return lang === 'ko' || lang.indexOf('ko-') === 0;
+    });
 }
 function tpGetSavedVoiceURI() {
     try { return localStorage.getItem(TP_VOICE_STORAGE_KEY) || ''; } catch (e) { return ''; }
@@ -273,14 +279,6 @@ function speakTinypingAnswer(text, isCorrect, onEnd) {
         window.speechSynthesis.speak(utter);
     } catch (e) { if (onEnd) onEnd(); }
 }
-// 답을 말했을 때(정답/오답 모두) 캐릭터 이미지가 정답창 너비만큼 커졌다가 자연스레 다시 작아진다.
-function tpPopImageBox() {
-    var box = document.querySelector('.tinyping-image-box');
-    if (!box) return;
-    box.classList.add('tinyping-image-pop');
-    setTimeout(function () { box.classList.remove('tinyping-image-pop'); }, 420);
-}
-
 // ===== 설정 팝업 (목소리 / 정답 방식, 메인 설정 화면과 별도의 모달) =====
 var tinypingUiState = { settingsTab: 'voice' };
 function openTinypingSettings() {
@@ -735,7 +733,6 @@ function handleTinypingVoiceResult(transcripts) {
         // 정답이 아니면 라운드를 끝내지 않는다. 마이크는 onend에서 자동으로 다시 듣기 시작한다.
         var st = document.getElementById('tpVoiceStatus');
         if (st) st.innerText = '🎙️ "' + tinypingState.voiceSaid + '"라고 들었어요. 다시 말해볼까요?';
-        tpPopImageBox(); // 오답이어도 답을 말했으니 캐릭터 이미지가 한 번 커졌다가 작아진다.
         return;
     }
 
@@ -746,5 +743,4 @@ function handleTinypingVoiceResult(transcripts) {
     tinypingState.correctCount++;
     tinypingState.showSuccess = true;
     renderTinyping();
-    tpPopImageBox(); // 화면이 새로 그려진 뒤에 걸어야 애니메이션이 유지된다.
 }
